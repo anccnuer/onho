@@ -1,0 +1,4 @@
+GET /路径 HTTP/1.1
+Host: local.test
+accept-language: zh
+

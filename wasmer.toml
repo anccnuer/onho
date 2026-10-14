@@ -1,0 +1,28 @@
+# Wasmer package manifest for the WCGI app. `moon build --target wasm --release` has to
+# have produced the module below before `wasmer deploy`.
+[package]
+name = "username/moonbit-hono-wcgi"
+version = "0.1.0"
+description = "A Hono-like MoonBit web framework, running as a WCGI app on Wasmer Edge"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+
+[[module]]
+name = "wcgi"
+source = "_build/wasm/release/build/cmd/wcgi/wcgi.wasm"
+abi = "wasi"
+
+[[command]]
+name = "wcgi"
+module = "wcgi"
+runner = "https://webc.org/runner/wcgi"
+
+# RFC 3875 makes SCRIPT_NAME mandatory and no runner is documented to set it per request,
+# so the manifest fixes it, exactly as the reference WCGI package does. The framework only
+# routes on a value that starts with `/`, so an app name here leaves the route to
+# PATH_INFO or REQUEST_URI.
+[command.annotations.wasi]
+env = ["SCRIPT_NAME=moonbit-hono"]
+
+[command.annotations.wcgi]
+dialect = "rfc-3875"

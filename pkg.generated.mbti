@@ -1,0 +1,61 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "username/moonbit-hono"
+
+// Values
+pub fn demo_app() -> App
+
+pub fn parse_request(Bytes) -> Request?
+
+pub fn reason_phrase(Int) -> String
+
+pub fn redirect(String, status? : Int) -> Response
+
+pub fn request_from_cgi(Array[(String, String)], String) -> Request?
+
+pub fn response(Int, String) -> Response
+
+pub fn response_json(Int, String) -> Response
+
+pub fn response_with(Int, Array[(String, String)], String) -> Response
+
+pub fn serialize_cgi(Response) -> Bytes
+
+pub fn serialize_response(Response) -> Bytes
+
+// Errors
+
+// Types and methods
+type App
+pub fn App::all(Self, String, (Request) -> Response) -> Unit
+pub fn App::delete(Self, String, (Request) -> Response) -> Unit
+pub fn App::get(Self, String, (Request) -> Response) -> Unit
+pub fn App::handle(Self, Request) -> Response
+pub fn App::new() -> Self
+pub fn App::patch(Self, String, (Request) -> Response) -> Unit
+pub fn App::post(Self, String, (Request) -> Response) -> Unit
+pub fn App::put(Self, String, (Request) -> Response) -> Unit
+pub fn App::route(Self, String, String, (Request) -> Response) -> Unit
+
+pub struct Request {
+  http_method : String
+  path : String
+  query : String
+  headers : Array[(String, String)]
+  body : String
+  params : Array[(String, String)]
+}
+pub fn Request::header(Self, String) -> String
+pub fn Request::param(Self, String) -> String
+pub fn Request::query_param(Self, String) -> String
+pub fn Request::uri(Self) -> String
+
+pub struct Response {
+  status : Int
+  headers : Array[(String, String)]
+  body : String
+}
+
+// Type aliases
+pub type Handler = (Request) -> Response
+
+// Traits

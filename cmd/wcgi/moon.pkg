@@ -1,0 +1,7 @@
+import {
+  "username/moonbit-hono" @lib,
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/string",
+}
+
+pkgtype(kind: "executable")

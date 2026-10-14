@@ -1,0 +1,10 @@
+import {
+  "username/moonbit-hono",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/test" @testing,
+}
+
+// Test-only imports, so the whole list reads as unused to `moon build`; the
+// suppression is scoped to this package, not the library.
+
+warnings = "+a-unused_package"
