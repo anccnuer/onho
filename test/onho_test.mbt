@@ -106,23 +106,45 @@ test "serialize_keeps_explicit_content_length" {
 }
 
 ///|
+/// A router wired the way a library user wires one, used for router-level tests.
+fn demo() -> @onho.App {
+  let app = @onho.App::new()
+  app.get("/", _req => @onho.response(200, "hello from onho"))
+  app.get("/health", _req => @onho.response(200, "ok"))
+  app.post("/health", _req => @onho.response(201, "created"))
+  app.post("/echo", req => @onho.response(200, req.body))
+  app.get("/header", req => {
+    @onho.response(200, "x-demo=\{req.header("x-demo")}")
+  })
+  app.get("/search", req => @onho.response(200, "q=\{req.query_param("q")}"))
+  app.get("/user/:id", req => @onho.response(200, "user:\{req.param("id")}"))
+  app.get("/user/new", _req => @onho.response(200, "new user form"))
+  app.get("/static/*", req => @onho.response(200, "asset:\{req.param("*")}"))
+  app.get("/status.json", _req => {
+    @onho.response_json(200, "{\"ok\":true,\"via\":\"onho\"}")
+  })
+  app.get("/redirect", _req => @onho.redirect("/health"))
+  app
+}
+
+///|
 test "router_matches_method_and_path" {
-  let app = @onho.demo_app()
+  let app = demo()
   @testing.assert_eq(app.handle(request_of("GET", "/health", "")).status, 200)
-  @testing.assert_eq(app.handle(request_of("POST", "/health", "")).status, 405)
+  @testing.assert_eq(app.handle(request_of("POST", "/health", "")).status, 201)
   @testing.assert_eq(app.handle(request_of("GET", "/nope", "")).status, 404)
 }
 
 ///|
 test "echo_route_returns_the_request_body" {
-  let res = @onho.demo_app().handle(request_of("POST", "/echo", "ping"))
+  let res = demo().handle(request_of("POST", "/echo", "ping"))
   @testing.assert_eq(res.body, "ping")
 }
 
 ///|
 test "header_route_reads_lowercase_name" {
   let req = parsed(@utf8.encode("GET /header HTTP/1.1\r\nX-Demo: abc\r\n\r\n"))
-  @testing.assert_eq(@onho.demo_app().handle(req).body, "x-demo=abc")
+  @testing.assert_eq(demo().handle(req).body, "x-demo=abc")
 }
 
 ///|
@@ -277,8 +299,8 @@ test "serialize_cgi_keeps_utf8_body_bytes" {
 test "cgi_request_drives_the_demo_app" {
   let req = cgi_request([("REQUEST_METHOD", "GET"), ("SCRIPT_NAME", "/")])
   @testing.assert_eq(
-    text(@onho.serialize_cgi(@onho.demo_app().handle(req))),
-    "Status: 200 OK\ncontent-type: text/plain; charset=utf-8\n\nhello from moonbit",
+    text(@onho.serialize_cgi(demo().handle(req))),
+    "Status: 200 OK\ncontent-type: text/plain; charset=utf-8\n\nhello from onho",
   )
 }
 
@@ -315,4 +337,209 @@ test "query_param_handles_edges" {
   @testing.assert_eq(req.query_param("a"), "")
   @testing.assert_eq(req.query_param("b"), "")
   @testing.assert_eq(req.query, "a=1&a=&b")
+}
+
+///|
+/// A `:name` capture reaches the handler, and a literal route beats the param
+/// route it competes with, registration order notwithstanding.
+test "router_captures_params_and_prefers_literals" {
+  @testing.assert_eq(
+    demo().handle(request_of("GET", "/user/123", "")).body,
+    "user:123",
+  )
+  @testing.assert_eq(
+    demo().handle(request_of("GET", "/user/new", "")).body,
+    "new user form",
+  )
+}
+
+///|
+/// A trailing `*` captures the whole remaining tail, separators included.
+test "router_captures_wildcard_tail" {
+  @testing.assert_eq(
+    demo().handle(request_of("GET", "/static/css/app.css", "")).body,
+    "asset:css/app.css",
+  )
+}
+
+///|
+/// A wrong method on an existing path answers 405, and the `allow` header lists
+/// the methods the path does serve, in registration order.
+test "router_answers_405_with_allow_header" {
+  let app = @onho.App::new()
+  app.post("/thing", _req => @onho.response(200, ""))
+  app.put("/thing", _req => @onho.response(200, ""))
+  app.delete("/thing", _req => @onho.response(200, ""))
+  let res = app.handle(request_of("GET", "/thing", ""))
+  @testing.assert_eq(res.status, 405)
+  @testing.assert_eq(res.header("allow"), "POST, PUT, DELETE")
+}
+
+///|
+/// An `ANY` route stands in for every method without listing itself in `allow`.
+test "router_any_route_serves_every_method" {
+  let app = @onho.App::new()
+  app.all("/any", _req => @onho.response(200, "any"))
+  app.get("/plain", _req => @onho.response(200, ""))
+  @testing.assert_eq(app.handle(request_of("DELETE", "/any", "")).body, "any")
+  // GET exists, so DELETE /plain is a 405 with allow naming GET only.
+  let res = app.handle(request_of("DELETE", "/plain", ""))
+  @testing.assert_eq(res.status, 405)
+  @testing.assert_eq(res.header("allow"), "GET")
+}
+
+///|
+/// Middleware runs in registration order, outermost first, and may short-circuit
+/// the chain by never calling `next`.
+test "middleware_wraps_in_registration_order" {
+  let trace : Array[String] = []
+  let app = @onho.App::new()
+  app.get("/x", _req => {
+    trace.push("handler")
+    @onho.response(200, "")
+  })
+  app.use_middleware((req, next) => {
+    trace.push("a before")
+    let res = next(req)
+    trace.push("a after")
+    res
+  })
+  app.use_middleware((req, next) => {
+    trace.push("b before")
+    let res = next(req)
+    trace.push("b after")
+    res
+  })
+  let _ = app.handle(request_of("GET", "/x", ""))
+  @testing.assert_eq(trace[0], "a before")
+  @testing.assert_eq(trace[1], "b before")
+  @testing.assert_eq(trace[2], "handler")
+  @testing.assert_eq(trace[3], "b after")
+  @testing.assert_eq(trace[4], "a after")
+}
+
+///|
+/// A middleware that answers directly stops the chain: no handler runs.
+test "middleware_may_short_circuit" {
+  let app = @onho.App::new()
+  app.get("/blocked", _req => @onho.response(200, "should not run"))
+  app.use_middleware((_req, _next) => @onho.response(401, "denied"))
+  let res = app.handle(request_of("GET", "/blocked", ""))
+  @testing.assert_eq(res.status, 401)
+  @testing.assert_eq(res.body, "denied")
+}
+
+///|
+/// `path~` scopes a middleware to the paths its pattern matches.
+test "middleware_path_scope" {
+  let app = @onho.App::new()
+  app.get("/admin/x", req => @onho.response(200, req.header("x-scoped")))
+  app.get("/open", req => @onho.response(200, req.header("x-scoped")))
+  app.use_middleware(
+    (req, next) => next(req.set_header("x-scoped", "1")),
+    path="/admin/*",
+  )
+  @testing.assert_eq(app.handle(request_of("GET", "/admin/x", "")).body, "1")
+  @testing.assert_eq(app.handle(request_of("GET", "/open", "")).body, "")
+}
+
+///|
+/// A not-found handler replaces the default 404 body for unmatched paths, but
+/// never masks a real route or a 405.
+test "not_found_handler_replaces_default_404" {
+  let app = @onho.App::new()
+  app.get("/here", _req => @onho.response(200, "here"))
+  app.post("/here", _req => @onho.response(200, ""))
+  app.not_found(req => @onho.response(404, "custom: \{req.path}"))
+  @testing.assert_eq(
+    app.handle(request_of("GET", "/nowhere", "")).body,
+    "custom: /nowhere",
+  )
+  @testing.assert_eq(app.handle(request_of("GET", "/here", "")).body, "here")
+  @testing.assert_eq(app.handle(request_of("DELETE", "/here", "")).status, 405)
+}
+
+///|
+/// An `Error` raised out of a handler reaches the app's error handler, or —
+/// with none registered — collapses to a plain 500 that leaks nothing.
+test "raised_errors_reach_on_error" {
+  let app = @onho.App::new()
+  app.get("/boom", _req => raise Failure("boom"))
+  let res = app.handle(request_of("GET", "/boom", ""))
+  @testing.assert_eq(res.status, 500)
+  @testing.assert_eq(res.body, "internal server error")
+  let app2 = @onho.App::new()
+  app2.get("/boom", _req => raise Failure("boom"))
+  app2.on_error((req, err) => {
+    @onho.response(503, "\{req.path}: \{err.to_string()}")
+  })
+  let res2 = app2.handle(request_of("GET", "/boom", ""))
+  @testing.assert_eq(res2.status, 503)
+  assert_true(res2.body.has_prefix("/boom: "))
+}
+
+///|
+/// A `HEAD` request falls back to the `GET` handler with the body dropped, but
+/// a route registered for `HEAD` keeps control of its own body.
+test "head_falls_back_to_get_without_a_body" {
+  let app = @onho.App::new()
+  app.get("/both", _req => @onho.response(200, "body"))
+  app.route("HEAD", "/explicit", _req => @onho.response(200, "head body"))
+  let head = app.handle(request_of("HEAD", "/both", ""))
+  @testing.assert_eq(head.status, 200)
+  @testing.assert_eq(head.body, "")
+  @testing.assert_eq(
+    app.handle(request_of("HEAD", "/explicit", "")).body,
+    "head body",
+  )
+  // No GET route for the path either -> still a plain 404.
+  @testing.assert_eq(app.handle(request_of("HEAD", "/none", "")).status, 404)
+}
+
+///|
+test "set_header_appends_and_html_types_the_body" {
+  let res = @onho.html(200, "<p>hi</p>")
+    .set_header("x-a", "1")
+    .set_header("x-b", "2")
+  @testing.assert_eq(res.status, 200)
+  @testing.assert_eq(res.headers[0].0, "content-type")
+  @testing.assert_eq(res.headers[0].1, "text/html; charset=utf-8")
+  @testing.assert_eq(res.headers[1].1, "1")
+  @testing.assert_eq(res.headers[2].1, "2")
+}
+
+///|
+/// A header value with a line break would break response framing, so both
+/// serializers drop the header entirely.
+test "serializers_drop_headers_with_line_breaks" {
+  let res = @onho.response_with(
+    200,
+    [("x-clean", "ok"), ("x-evil", "1\r\nEvil: 2")],
+    "body",
+  )
+  @testing.assert_eq(
+    text(@onho.serialize_response(res)),
+    "HTTP/1.1 200 OK\r\nx-clean: ok\r\ncontent-length: 4\r\n\r\nbody",
+  )
+  @testing.assert_eq(
+    text(@onho.serialize_cgi(res)),
+    "Status: 200 OK\nx-clean: ok\n\nbody",
+  )
+}
+
+///|
+/// The raw-HTTP path arrives percent-encoded and decodes once at parse, so both
+/// boundaries route on the same decoded path.
+test "parse_request_decodes_the_path" {
+  let req = parsed(@utf8.encode("GET /user/caf%C3%A9 HTTP/1.1\r\n\r\n"))
+  @testing.assert_eq(req.path, "/user/café")
+}
+
+///|
+test "reason_phrase_common_codes" {
+  @testing.assert_eq(@onho.reason_phrase(201), "Created")
+  @testing.assert_eq(@onho.reason_phrase(401), "Unauthorized")
+  @testing.assert_eq(@onho.reason_phrase(413), "Content Too Large")
+  @testing.assert_eq(@onho.reason_phrase(429), "Too Many Requests")
+  @testing.assert_eq(@onho.reason_phrase(503), "Service Unavailable")
 }

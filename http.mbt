@@ -37,6 +37,22 @@ pub fn Request::header(self : Request, name : String) -> String {
 }
 
 ///|
+/// Returns the request with one more header, for middleware that enriches the
+/// request before it reaches the route. Repeated names stay separate entries.
+pub fn Request::set_header(
+  self : Request,
+  name : String,
+  value : String,
+) -> Request {
+  let headers : Array[(String, String)] = []
+  for entry in self.headers {
+    headers.push(entry)
+  }
+  headers.push((name, value))
+  { ..self, headers, }
+}
+
+///|
 /// One value of a `application/x-www-form-urlencoded` query parameter, with its percent
 /// escapes and `+` signs decoded.
 pub fn Request::query_param(self : Request, name : String) -> String {
@@ -77,6 +93,18 @@ pub struct Response {
 }
 
 ///|
+/// A response header by lowercase name; absent reads as empty.
+pub fn Response::header(self : Response, name : String) -> String {
+  let mut found = ""
+  for (key, value) in self.headers {
+    if key == name {
+      found = value
+    }
+  }
+  found
+}
+
+///|
 /// Builds a response with an exact header list, for handlers that need to set
 /// `location`, `set-cookie` or their own `content-length`.
 pub fn response_with(
@@ -100,6 +128,28 @@ pub fn response_json(status : Int32, body : String) -> Response {
 }
 
 ///|
+/// Builds an HTML response.
+pub fn html(status : Int32, body : String) -> Response {
+  response_with(status, [("content-type", "text/html; charset=utf-8")], body)
+}
+
+///|
+/// Returns a copy of the response with one more header. Repeated names stay as
+/// separate entries, which is how `set-cookie` must be sent.
+pub fn Response::set_header(
+  self : Response,
+  name : String,
+  value : String,
+) -> Response {
+  let headers : Array[(String, String)] = []
+  for entry in self.headers {
+    headers.push(entry)
+  }
+  headers.push((name, value))
+  { status: self.status, headers, body: self.body, }
+}
+
+///|
 /// Builds a redirect response with a `location` header and an empty body.
 /// Defaults to 302; pass `status~` for 301, 307 or 308.
 pub fn redirect(to : String, status~ : Int32 = 302) -> Response {
@@ -110,7 +160,13 @@ pub fn redirect(to : String, status~ : Int32 = 302) -> Response {
 /// Status reason phrase. Unknown codes fall back to the generic class text, so a
 /// serialized response stays valid HTTP.
 pub fn reason_phrase(status : Int32) -> String {
-  if status == 204 {
+  if status == 200 {
+    "OK"
+  } else if status == 201 {
+    "Created"
+  } else if status == 202 {
+    "Accepted"
+  } else if status == 204 {
     "No Content"
   } else if status == 301 {
     "Moved Permanently"
@@ -124,12 +180,36 @@ pub fn reason_phrase(status : Int32) -> String {
     "Permanent Redirect"
   } else if status == 400 {
     "Bad Request"
+  } else if status == 401 {
+    "Unauthorized"
+  } else if status == 403 {
+    "Forbidden"
   } else if status == 404 {
     "Not Found"
   } else if status == 405 {
     "Method Not Allowed"
+  } else if status == 409 {
+    "Conflict"
+  } else if status == 410 {
+    "Gone"
+  } else if status == 413 {
+    "Content Too Large"
+  } else if status == 415 {
+    "Unsupported Media Type"
+  } else if status == 422 {
+    "Unprocessable Content"
+  } else if status == 429 {
+    "Too Many Requests"
   } else if status == 500 {
     "Internal Server Error"
+  } else if status == 501 {
+    "Not Implemented"
+  } else if status == 502 {
+    "Bad Gateway"
+  } else if status == 503 {
+    "Service Unavailable"
+  } else if status == 504 {
+    "Gateway Timeout"
   } else if status >= 500 {
     "Server Error"
   } else if status >= 400 {
@@ -311,10 +391,14 @@ pub fn parse_request(raw : Bytes) -> Request? {
   guard sp2 > sp1 && sp2 <= line_stop else { return None }
   let verb = decode_range(src, 0, sp1)
   let target = decode_range(src, sp1 + 1, sp2)
-  let (path, query) = match target.split_once("?") {
+  let (raw_path, query) = match target.split_once("?") {
     None => (target, "")
     Some((before, after)) => (before.to_owned(), after.to_owned())
   }
+  // The path is percent-encoded on the wire (RFC 3986), and the CGI boundary
+  // receives it decoded by the gateway, so decoding here keeps routes matching
+  // the same way whichever boundary produced the request.
+  let path = percent_decode(raw_path)
 
   let headers : Array[(String, String)] = []
   let mut pos = next
@@ -472,6 +556,15 @@ pub fn request_from_cgi(
 }
 
 ///|
+/// A header name or value carrying a line break would break the framing the
+/// serializers build, so such a header is dropped whole: fail closed rather
+/// than emit a response a client could re-frame.
+fn header_is_safe(name : String, value : String) -> Bool {
+  let text = name + value
+  !(text.contains("\r") || text.contains("\n"))
+}
+
+///|
 /// Serializes a response the way CGI expects it on stdout: a `Status:` line, headers
 /// sorted by name, a blank line, then the body, all separated by bare LF.
 ///
@@ -484,7 +577,9 @@ pub fn serialize_cgi(res : Response) -> Bytes {
   push_utf8(out, "Status: \{res.status} \{reason_phrase(res.status)}\n")
   let lines : Array[(String, String)] = []
   for (name, value) in res.headers {
-    if name != "content-length" && name != "status" {
+    if name != "content-length" &&
+      name != "status" &&
+      header_is_safe(name, value) {
       lines.push((name, value))
     }
   }
@@ -512,6 +607,9 @@ pub fn serialize_response(res : Response) -> Bytes {
   push_utf8(out, "HTTP/1.1 \{res.status} \{reason_phrase(res.status)}\r\n")
   let mut has_length = false
   for (name, value) in res.headers {
+    if !header_is_safe(name, value) {
+      continue
+    }
     if name == "content-length" {
       has_length = true
     }

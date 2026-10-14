@@ -2,7 +2,7 @@
 package "anccnuer/onho"
 
 // Values
-pub fn demo_app() -> App
+pub fn html(Int, String) -> Response
 
 pub fn parse_request(Bytes) -> Request?
 
@@ -26,15 +26,18 @@ pub fn serialize_response(Response) -> Bytes
 
 // Types and methods
 type App
-pub fn App::all(Self, String, (Request) -> Response) -> Unit
-pub fn App::delete(Self, String, (Request) -> Response) -> Unit
-pub fn App::get(Self, String, (Request) -> Response) -> Unit
+pub fn App::all(Self, String, (Request) -> Response raise) -> Unit
+pub fn App::delete(Self, String, (Request) -> Response raise) -> Unit
+pub fn App::get(Self, String, (Request) -> Response raise) -> Unit
 pub fn App::handle(Self, Request) -> Response
 pub fn App::new() -> Self
-pub fn App::patch(Self, String, (Request) -> Response) -> Unit
-pub fn App::post(Self, String, (Request) -> Response) -> Unit
-pub fn App::put(Self, String, (Request) -> Response) -> Unit
-pub fn App::route(Self, String, String, (Request) -> Response) -> Unit
+pub fn App::not_found(Self, (Request) -> Response raise) -> Unit
+pub fn App::on_error(Self, (Request, Error) -> Response) -> Unit
+pub fn App::patch(Self, String, (Request) -> Response raise) -> Unit
+pub fn App::post(Self, String, (Request) -> Response raise) -> Unit
+pub fn App::put(Self, String, (Request) -> Response raise) -> Unit
+pub fn App::route(Self, String, String, (Request) -> Response raise) -> Unit
+pub fn App::use_middleware(Self, (Request, (Request) -> Response raise) -> Response raise, path? : String) -> Unit
 
 pub struct Request {
   http_method : String
@@ -47,6 +50,7 @@ pub struct Request {
 pub fn Request::header(Self, String) -> String
 pub fn Request::param(Self, String) -> String
 pub fn Request::query_param(Self, String) -> String
+pub fn Request::set_header(Self, String, String) -> Self
 pub fn Request::uri(Self) -> String
 
 pub struct Response {
@@ -54,8 +58,14 @@ pub struct Response {
   headers : Array[(String, String)]
   body : String
 }
+pub fn Response::header(Self, String) -> String
+pub fn Response::set_header(Self, String, String) -> Self
 
 // Type aliases
-pub type Handler = (Request) -> Response
+pub type Handler = (Request) -> Response raise
+
+pub type Middleware = (Request, (Request) -> Response raise) -> Response raise
+
+pub type Next = (Request) -> Response raise
 
 // Traits

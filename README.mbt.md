@@ -2,6 +2,53 @@
 
 A Hono-inspired web framework in MoonBit, compiled to wasm for Wasmer Edge's WCGI model.
 
+## Getting started
+
+```
+moon add anccnuer/onho
+```
+
+```moonbit nocheck
+// cmd/server/main.mbt
+///|
+fn main {
+  let app = @onho.App::new()
+  app.get("/hello/:name", req => {
+    @onho.response(200, "hello \{req.param("name")}")
+  })
+  app.get("/redirect", _req => @onho.redirect("/hello/world"))
+  // Middleware wraps the chain; registration order is outermost first, and
+  // `path~` scopes it to a route pattern.
+  app.use_middleware(
+    (req, next) => {
+      let res = next(req)
+      res.set_header("x-powered-by", "onho")
+    },
+    path="/api/*",
+  )
+  // Handlers may raise; an uncaught Error becomes the error handler's problem.
+  app.get("/api/user/:id", req => {
+    let id = @string.parse_int(req.param("id")) catch {
+      _ => raise Failure("bad id")
+    }
+    @onho.response_json(200, "{\"id\":\{id}}")
+  })
+  app.on_error((_req, _err) => @onho.response(500, "something broke"))
+  app.not_found(_req => @onho.response_json(404, "{\"error\":\"not found\"}"))
+  // Hand the app a Request from whichever boundary you run behind:
+  // @onho.request_from_cgi(env, body) for WCGI, @onho.parse_request(bytes) for raw HTTP.
+  // Then handle it:
+  //   let res = app.handle(req)
+}
+```
+
+Routing: literal segments, `:name` parameters, one trailing `*` wildcard; the most
+specific route wins; 405 carries an `allow` header; and there is a `handler` per method,
+and `app.all` for any method, `app.route(method, path, handler)` for the rest.
+
+A `HEAD` request without a route of its own is served by the path's `GET` handler with
+the body dropped.
+
 ## What WCGI is
 
 WCGI is RFC 3875 CGI over a WASI **executable** — there is no request-shaped ABI to
@@ -27,7 +74,7 @@ bash dev/check.sh              # build + unit tests + ABI + fixtures + wasmer
 bash dev/check.sh --update     # rewrite fixtures/*.expect after an intended change
 ```
 
-1. `moon test` — 24 tests over the router and the CGI mapping, on plain values, no wasm.
+1. `moon test` — router, middleware, CGI mapping and codecs, on plain values, no wasm.
 2. `moon build --target wasm --release`
 3. `node dev/host.mjs abi` — the module must export `_start` and `memory`, and import
    **only** `environ_sizes_get`, `environ_get`, `fd_read`, `fd_write`. Anything more is
@@ -93,8 +140,8 @@ answers the same page to every path, the runner is fixing `SCRIPT_NAME` (the tem
 ## Layout
 
 - `http.mbt` — `Request`/`Response`, the CGI mapping, and the raw-HTTP codec
-- `app.mbt` — the `App` router: method + exact path, 405 kept distinct from 404
-- `cmd/wcgi/main.mbt` — the CGI program: four WASI imports, one request per instance
+- `app.mbt` — the `App` router: middleware chain, method + exact path, 405 kept distinct from 404, HEAD fallback, error handler
+- `cmd/wcgi/main.mbt` — an example CGI program built on the framework: four WASI imports, one request per instance
 - `test/` — blackbox tests against the public API
 - `fixtures/` — raw requests (host input) and `.expect` CGI-output snapshots
 - `dev/host.mjs` — local WCGI host, on Node's `WebAssembly` runtime

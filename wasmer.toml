@@ -2,7 +2,7 @@
 # have produced the module below before `wasmer deploy`.
 [package]
 name = "anccnuer/onho-wcgi"
-version = "0.1.0"
+version = "0.2.0"
 description = "A Hono-like MoonBit web framework, running as a WCGI app on Wasmer Edge"
 license = "MIT OR Apache-2.0"
 readme = "README.md"

@@ -1,7 +1,17 @@
 ///|
-/// A route handler. The framework core stays total: it takes a `Request` and
-/// returns a `Response`, with no host or async assumptions baked in.
-pub type Handler = (Request) -> Response
+/// A route handler. It may raise an `Error`, which the router turns into a 500
+/// via the app's `on_error` handler, so one bad parse does not take the
+/// response down with it. Handlers that never raise are accepted unchanged.
+pub type Handler = (Request) -> Response raise Error
+
+///|
+pub type Next = (Request) -> Response raise Error
+
+///|
+/// A middleware wraps the chain. Registration order is wrapping order: the first
+/// `use`d middleware is outermost. A middleware may short-circuit by returning
+/// without calling `next`, or catch what the chain below it raised.
+pub type Middleware = (Request, Next) -> Response raise Error
 
 ///|
 /// One registered route. `path` may be a pattern: literal segments, `:name`
@@ -13,16 +23,27 @@ priv struct Route {
 }
 
 ///|
+/// One registered middleware, applied only to requests whose path matches its
+/// pattern (the default matches every path).
+priv struct MiddlewareEntry {
+  path : String
+  mw : Middleware
+}
+
+///|
 /// The application object. Matching walks each registered pattern segment by
 /// segment; among competing matches the most specific route wins, with
 /// registration order breaking ties.
 struct App {
   routes : Array[Route]
+  middlewares : Array[MiddlewareEntry]
+  mut not_found_handler : Handler?
+  mut error_handler : ((Request, Error) -> Response)?
 }
 
 ///|
 pub fn App::new() -> App {
-  { routes: [], }
+  { routes: [], middlewares: [], not_found_handler: None, error_handler: None, }
 }
 
 ///|
@@ -67,6 +88,34 @@ pub fn App::delete(self : App, path : String, handler : Handler) -> Unit {
 /// Registers `handler` for `path` under every method, recorded as `ANY`.
 pub fn App::all(self : App, path : String, handler : Handler) -> Unit {
   self.route("ANY", path, handler)
+}
+
+///|
+/// Appends `middleware` to the chain, applied to requests whose path matches
+/// `path` (a pattern like a route's, defaulting to every path). The first
+/// registered middleware is outermost.
+pub fn App::use_middleware(
+  self : App,
+  middleware : Middleware,
+  path~ : String = "*",
+) -> Unit {
+  self.middlewares.push({ path, mw: middleware, })
+}
+
+///|
+/// Replaces the default 404 for requests that match no route.
+pub fn App::not_found(self : App, handler : Handler) -> Unit {
+  self.not_found_handler = Some(handler)
+}
+
+///|
+/// Replaces the default 500 for an `Error` raised out of a handler or
+/// middleware. The default answers plain-text 500 and leaks nothing.
+pub fn App::on_error(
+  self : App,
+  handler : (Request, Error) -> Response,
+) -> Unit {
+  self.error_handler = Some(handler)
 }
 
 ///|
@@ -188,6 +237,10 @@ fn join_comma(arr : Array[String]) -> String {
 /// match the path, the most specific route whose method matches (or `ANY`) wins.
 /// A path that only exists under different methods yields 405 with an `allow`
 /// header listing them, so "no route" stays distinguishable from "wrong route".
+///
+/// Registered middleware wraps the outcome, a `HEAD` request falls back to the
+/// `GET` handler for its path with the body dropped, and an `Error` raised out
+/// of the chain becomes a 500 through the app's `on_error` handler.
 pub fn App::handle(self : App, req : Request) -> Response {
   let mut best_index = -1
   let mut best_params : Array[(String, String)] = []
@@ -199,7 +252,7 @@ pub fn App::handle(self : App, req : Request) -> Response {
     match pattern_match(route.path, req.path) {
       None => continue
       Some(params) =>
-        if route.http_method == "ANY" || route.http_method == req.http_method {
+        if method_matches(route.http_method, req.http_method) {
           let (wildcards, literals, params_count) = route_score(route.path)
           let better = best_index < 0 ||
             wildcards < best_wildcards ||
@@ -222,35 +275,74 @@ pub fn App::handle(self : App, req : Request) -> Response {
         }
     }
   }
-  if best_index >= 0 {
-    let route = self.routes[best_index]
-    return (route.handler)({ ..req, params: best_params, })
+  // A HEAD with no handler of its own is served by the GET route, body dropped.
+  let fall_back_to_get = req.http_method == "HEAD" && best_index < 0
+  if fall_back_to_get {
+    for i, route in self.routes.iter2() {
+      if route.http_method == "GET" || route.http_method == "ANY" {
+        match pattern_match(route.path, req.path) {
+          Some(params) => {
+            best_index = i
+            best_params = params
+            break
+          }
+          None => ()
+        }
+      }
+    }
   }
-  if allowed.length() > 0 {
-    return response_with(
-      405,
-      [("allow", join_comma(allowed))],
-      "method not allowed",
-    )
+  let endpoint : Next = req2 => {
+    if best_index >= 0 {
+      let route = self.routes[best_index]
+      let res = (route.handler)({ ..req2, params: best_params, })
+      // Only the GET fallback fakes a HEAD reply; a route registered for HEAD
+      // owns its body.
+      if fall_back_to_get {
+        { ..res, body: "", }
+      } else {
+        res
+      }
+    } else if allowed.length() > 0 {
+      response_with(405, [("allow", join_comma(allowed))], "method not allowed")
+    } else {
+      match self.not_found_handler {
+        Some(handler) => handler(req2)
+        None => response(404, "not found: \{req2.path}")
+      }
+    }
   }
-  response(404, "not found: \{req.path}")
+  let chained = fold_middlewares(self.middlewares, 0, req, endpoint)
+  chained(req) catch {
+    err =>
+      match self.error_handler {
+        Some(handler) => handler(req, err)
+        None => response(500, "internal server error")
+      }
+  }
 }
 
 ///|
-/// Demo routes, enough to prove request -> route -> response end to end, including
-/// path parameters, wildcard capture, redirect and JSON helpers.
-pub fn demo_app() -> App {
-  let app = App::new()
-  app.get("/", _req => response(200, "hello from moonbit"))
-  app.get("/health", _req => response(200, "ok"))
-  app.post("/echo", req => response(200, req.body))
-  app.get("/header", req => response(200, "x-demo=\{req.header("x-demo")}"))
-  app.get("/search", req => response(200, "q=\{req.query_param("q")}"))
-  app.get("/user/:id", req => response(200, "user:\{req.param("id")}"))
-  app.get("/static/*", req => response(200, "asset:\{req.param("*")}"))
-  app.get("/status.json", _req => {
-    response_json(200, "{\"ok\":true,\"via\":\"onho\"}")
-  })
-  app.get("/redirect", _req => redirect("/health"))
-  app
+/// `ANY` routes serve every method.
+fn method_matches(route_method : String, request_method : String) -> Bool {
+  route_method == "ANY" || route_method == request_method
+}
+
+///|
+/// Folds the middlewares that match `req.path` around `endpoint`, registration
+/// order wrapping outward: entry 0 ends up outermost.
+fn fold_middlewares(
+  entries : Array[MiddlewareEntry],
+  index : Int32,
+  req : Request,
+  endpoint : Next,
+) -> Next {
+  if index >= entries.length() {
+    return endpoint
+  }
+  let entry = entries[index]
+  if pattern_match(entry.path, req.path) is None {
+    return fold_middlewares(entries, index + 1, req, endpoint)
+  }
+  let rest = fold_middlewares(entries, index + 1, req, endpoint)
+  req2 => (entry.mw)(req2, rest)
 }

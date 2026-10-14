@@ -197,12 +197,46 @@ fn write_stdout(data : Bytes) -> Unit {
 }
 
 ///|
+/// The largest body the guest accepts. `CONTENT_LENGTH` reaches the environment
+/// before the client sends anything, so a hostile value asks for memory the
+/// guest never needs; anything over the cap is refused unread.
+fn max_body() -> Int32 {
+  1048576
+}
+
+///|
+/// The application. This is the whole wiring a real service needs: routes, a
+/// helper or two, and optionally middleware handlers — everything comes from
+/// the `anccnuer/onho` package.
+fn app() -> @lib.App {
+  let app = @lib.App::new()
+  app.get("/", _req => @lib.response(200, "hello from onho"))
+  app.get("/health", _req => @lib.response(200, "ok"))
+  app.post("/echo", req => @lib.response(200, req.body))
+  app.get("/header", req => @lib.response(200, "x-demo=\{req.header("x-demo")}"))
+  app.get("/search", req => @lib.response(200, "q=\{req.query_param("q")}"))
+  app.get("/user/:id", req => @lib.response(200, "user:\{req.param("id")}"))
+  app.get("/static/*", req => @lib.response(200, "asset:\{req.param("*")}"))
+  app.get("/status.json", _req => {
+    @lib.response_json(200, "{\"ok\":true,\"via\":\"onho\"}")
+  })
+  app.get("/redirect", _req => @lib.redirect("/health"))
+  app
+}
+
+///|
 fn main {
   let env = env_block()
-  let body = decode(read_stdin(content_length(env)))
+  let declared = content_length(env)
+  if declared > max_body() {
+    let res = @lib.response(413, "body too large")
+    write_stdout(@lib.serialize_cgi(res))
+    return ()
+  }
+  let body = decode(read_stdin(declared))
   let res = match @lib.request_from_cgi(env, body) {
     None => @lib.response(400, "malformed request")
-    Some(req) => @lib.demo_app().handle(req)
+    Some(req) => app().handle(req)
   }
   write_stdout(@lib.serialize_cgi(res))
 }

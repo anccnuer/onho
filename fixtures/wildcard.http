@@ -1,0 +1,2 @@
+GET /static/css/app.css HTTP/1.1
+Host: local.test
