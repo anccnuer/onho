@@ -13,7 +13,7 @@ name = "anccnuer/onho"
 
 version = "0.2.0"
 
-readme = "README.mbt.md"
+readme = "README.md"
 
 repository = "https://github.com/anccnuer/onho"
 

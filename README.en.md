@@ -1,5 +1,7 @@
 # anccnuer/onho
 
+English | [中文](README.md)
+
 A Hono-inspired web framework in MoonBit, compiled to wasm for Wasmer Edge's WCGI model.
 
 ## Getting started
