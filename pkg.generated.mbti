@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "username/moonbit-hono"
+package "anccnuer/onho"
 
 // Values
 pub fn demo_app() -> App

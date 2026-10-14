@@ -249,7 +249,7 @@ pub fn demo_app() -> App {
   app.get("/user/:id", req => response(200, "user:\{req.param("id")}"))
   app.get("/static/*", req => response(200, "asset:\{req.param("*")}"))
   app.get("/status.json", _req => {
-    response_json(200, "{\"ok\":true,\"via\":\"moonbit-hono\"}")
+    response_json(200, "{\"ok\":true,\"via\":\"onho\"}")
   })
   app.get("/redirect", _req => redirect("/health"))
   app

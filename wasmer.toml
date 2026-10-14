@@ -1,7 +1,7 @@
 # Wasmer package manifest for the WCGI app. `moon build --target wasm --release` has to
 # have produced the module below before `wasmer deploy`.
 [package]
-name = "username/moonbit-hono-wcgi"
+name = "anccnuer/onho-wcgi"
 version = "0.1.0"
 description = "A Hono-like MoonBit web framework, running as a WCGI app on Wasmer Edge"
 license = "MIT OR Apache-2.0"
@@ -22,7 +22,7 @@ runner = "https://webc.org/runner/wcgi"
 # routes on a value that starts with `/`, so an app name here leaves the route to
 # PATH_INFO or REQUEST_URI.
 [command.annotations.wasi]
-env = ["SCRIPT_NAME=moonbit-hono"]
+env = ["SCRIPT_NAME=onho"]
 
 [command.annotations.wcgi]
 dialect = "rfc-3875"

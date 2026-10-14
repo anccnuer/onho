@@ -61,7 +61,7 @@ function decodedPath(target) {
 //   uri     a gateway that only forwards the request line, in the non-standard REQUEST_URI
 const cgi_layouts = {
   script: path => ({ SCRIPT_NAME: path }),
-  split: path => ({ SCRIPT_NAME: "moonbit-hono", PATH_INFO: path }),
+  split: path => ({ SCRIPT_NAME: "onho", PATH_INFO: path }),
   uri: (path, query) => ({ REQUEST_URI: query ? `${path}?${query}` : path }),
 };
 const layoutName = process.env.CGI_LAYOUT ?? "script";

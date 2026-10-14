@@ -9,18 +9,18 @@
 //   "moonbitlang/x@0.4.6",
 // }
 
-name = "username/moonbit-hono"
+name = "anccnuer/onho"
 
 version = "0.1.0"
 
 readme = "README.mbt.md"
 
-repository = ""
+repository = "https://github.com/anccnuer/onho"
 
 license = "Apache-2.0"
 
-keywords = [ ]
+keywords = [ "http", "web", "routing", "wasi" ]
 
 preferred_target = "wasm"
 
-description = ""
+description = "A Hono-style lightweight web framework for MoonBit"

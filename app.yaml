@@ -1,4 +1,4 @@
 ---
 kind: wasmer.io/App.v0
-name: moonbit-hono
-package: username/moonbit-hono-wcgi
+name: onho
+package: anccnuer/onho-wcgi

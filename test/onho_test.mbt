@@ -8,19 +8,15 @@ fn text(raw : Bytes) -> String {
 }
 
 ///|
-fn parsed(raw : Bytes) -> @moonbit-hono.Request {
-  match @moonbit-hono.parse_request(raw) {
+fn parsed(raw : Bytes) -> @onho.Request {
+  match @onho.parse_request(raw) {
     Some(req) => req
     None => abort("expected a parsed request")
   }
 }
 
 ///|
-fn request_of(
-  verb : String,
-  path : String,
-  body : String,
-) -> @moonbit-hono.Request {
+fn request_of(verb : String, path : String, body : String) -> @onho.Request {
   parsed(
     @utf8.encode("\{verb} \{path} HTTP/1.1\r\nHost: local.test\r\n\r\n\{body}"),
   )
@@ -64,20 +60,17 @@ test "parse_keeps_repeated_headers_in_order" {
 ///|
 /// Malformed framing must fail closed, because the boundary turns `None` into a 400.
 test "parse_rejects_bad_input" {
+  @testing.assert_eq(@onho.parse_request(@utf8.encode("")) is None, true)
   @testing.assert_eq(
-    @moonbit-hono.parse_request(@utf8.encode("")) is None,
+    @onho.parse_request(@utf8.encode("GET / HTTP/1.1")) is None,
     true,
   )
   @testing.assert_eq(
-    @moonbit-hono.parse_request(@utf8.encode("GET / HTTP/1.1")) is None,
+    @onho.parse_request(@utf8.encode("\r\n\r\n")) is None,
     true,
   )
   @testing.assert_eq(
-    @moonbit-hono.parse_request(@utf8.encode("\r\n\r\n")) is None,
-    true,
-  )
-  @testing.assert_eq(
-    @moonbit-hono.parse_request(@utf8.encode("NO_SPACES\r\n\r\n")) is None,
+    @onho.parse_request(@utf8.encode("NO_SPACES\r\n\r\n")) is None,
     true,
   )
 }
@@ -88,19 +81,16 @@ test "parse_rejects_bad_input" {
 test "parse_rejects_invalid_utf8" {
   let raw = @utf8.encode("GET / HTTP/1.1\r\n\r\n").to_array()
   raw.push((255 : Int32).to_byte())
-  @testing.assert_eq(
-    @moonbit-hono.parse_request(Bytes::from_array(raw)) is None,
-    true,
-  )
+  @testing.assert_eq(@onho.parse_request(Bytes::from_array(raw)) is None, true)
 }
 
 ///|
 /// `content-length` counts bytes, not UTF-16 units — the exact bug this layer exists
 /// to prevent.
 test "serialize_counts_utf8_bytes" {
-  let res = @moonbit-hono.response(200, "你好")
+  let res = @onho.response(200, "你好")
   @testing.assert_eq(
-    text(@moonbit-hono.serialize_response(res)),
+    text(@onho.serialize_response(res)),
     "HTTP/1.1 200 OK\r\ncontent-type: text/plain; charset=utf-8\r\ncontent-length: 6\r\n\r\n你好",
   )
 }
@@ -108,16 +98,16 @@ test "serialize_counts_utf8_bytes" {
 ///|
 /// An explicit length set by a handler wins, so a framework-level override survives.
 test "serialize_keeps_explicit_content_length" {
-  let res = @moonbit-hono.response_with(204, [("content-length", "0")], "")
+  let res = @onho.response_with(204, [("content-length", "0")], "")
   @testing.assert_eq(
-    text(@moonbit-hono.serialize_response(res)),
+    text(@onho.serialize_response(res)),
     "HTTP/1.1 204 No Content\r\ncontent-length: 0\r\n\r\n",
   )
 }
 
 ///|
 test "router_matches_method_and_path" {
-  let app = @moonbit-hono.demo_app()
+  let app = @onho.demo_app()
   @testing.assert_eq(app.handle(request_of("GET", "/health", "")).status, 200)
   @testing.assert_eq(app.handle(request_of("POST", "/health", "")).status, 405)
   @testing.assert_eq(app.handle(request_of("GET", "/nope", "")).status, 404)
@@ -125,26 +115,26 @@ test "router_matches_method_and_path" {
 
 ///|
 test "echo_route_returns_the_request_body" {
-  let res = @moonbit-hono.demo_app().handle(request_of("POST", "/echo", "ping"))
+  let res = @onho.demo_app().handle(request_of("POST", "/echo", "ping"))
   @testing.assert_eq(res.body, "ping")
 }
 
 ///|
 test "header_route_reads_lowercase_name" {
   let req = parsed(@utf8.encode("GET /header HTTP/1.1\r\nX-Demo: abc\r\n\r\n"))
-  @testing.assert_eq(@moonbit-hono.demo_app().handle(req).body, "x-demo=abc")
+  @testing.assert_eq(@onho.demo_app().handle(req).body, "x-demo=abc")
 }
 
 ///|
-fn cgi_request(entries : Array[(String, String)]) -> @moonbit-hono.Request {
-  match @moonbit-hono.request_from_cgi(entries, "") {
+fn cgi_request(entries : Array[(String, String)]) -> @onho.Request {
+  match @onho.request_from_cgi(entries, "") {
     Some(req) => req
     None => abort("expected a cgi request")
   }
 }
 
 ///|
-fn header_of(req : @moonbit-hono.Request, name : String) -> String {
+fn header_of(req : @onho.Request, name : String) -> String {
   let mut found = "?"
   for (key, value) in req.headers {
     if key == name {
@@ -206,11 +196,11 @@ test "cgi_request_unfolds_http_headers_and_mirrors_variables" {
 /// is nothing to route on, so the boundary answers 400 rather than guessing.
 test "cgi_request_requires_a_method_and_a_path" {
   @testing.assert_eq(
-    @moonbit-hono.request_from_cgi([("SCRIPT_NAME", "/")], "") is None,
+    @onho.request_from_cgi([("SCRIPT_NAME", "/")], "") is None,
     true,
   )
   @testing.assert_eq(
-    @moonbit-hono.request_from_cgi([("REQUEST_METHOD", "GET")], "") is None,
+    @onho.request_from_cgi([("REQUEST_METHOD", "GET")], "") is None,
     true,
   )
 }
@@ -233,8 +223,8 @@ test "cgi_request_falls_back_to_request_uri" {
 /// boundary answers 400 rather than matching a path that never was one.
 test "cgi_request_ignores_a_script_name_that_is_not_a_path" {
   @testing.assert_eq(
-    @moonbit-hono.request_from_cgi(
-      [("REQUEST_METHOD", "GET"), ("SCRIPT_NAME", "moonbit-hono")],
+    @onho.request_from_cgi(
+      [("REQUEST_METHOD", "GET"), ("SCRIPT_NAME", "onho")],
       "",
     )
     is None,
@@ -245,13 +235,13 @@ test "cgi_request_ignores_a_script_name_that_is_not_a_path" {
 ///|
 /// CGI output is LF-only, carries the status as a header, and sorts the rest by name.
 test "serialize_cgi_writes_status_and_sorted_headers" {
-  let res = @moonbit-hono.response_with(
+  let res = @onho.response_with(
     301,
     [("x-a", "1"), ("content-type", "text/plain"), ("b", "2")],
     "moved",
   )
   @testing.assert_eq(
-    text(@moonbit-hono.serialize_cgi(res)),
+    text(@onho.serialize_cgi(res)),
     "Status: 301 Moved Permanently\nb: 2\ncontent-type: text/plain\nx-a: 1\n\nmoved",
   )
 }
@@ -260,22 +250,19 @@ test "serialize_cgi_writes_status_and_sorted_headers" {
 /// `Content-Length` tells CGI the body is already a complete response and must be
 /// forwarded raw, and a second `Status` is a second status line. Neither may leak in.
 test "serialize_cgi_drops_content_length_and_status" {
-  let res = @moonbit-hono.response_with(
+  let res = @onho.response_with(
     200,
     [("content-length", "5"), ("status", "201")],
     "ok",
   )
-  @testing.assert_eq(
-    text(@moonbit-hono.serialize_cgi(res)),
-    "Status: 200 OK\n\nok",
-  )
+  @testing.assert_eq(text(@onho.serialize_cgi(res)), "Status: 200 OK\n\nok")
 }
 
 ///|
 /// The body goes out as the bytes the handler wrote, not as UTF-16 units, and the
 /// whole response is a byte-exact match down to the LF separators.
 test "serialize_cgi_keeps_utf8_body_bytes" {
-  let raw = @moonbit-hono.serialize_cgi(@moonbit-hono.response(200, "你好"))
+  let raw = @onho.serialize_cgi(@onho.response(200, "你好"))
   let expected = @utf8.encode(
     "Status: 200 OK\ncontent-type: text/plain; charset=utf-8\n\n",
   ).to_array()
@@ -290,7 +277,7 @@ test "serialize_cgi_keeps_utf8_body_bytes" {
 test "cgi_request_drives_the_demo_app" {
   let req = cgi_request([("REQUEST_METHOD", "GET"), ("SCRIPT_NAME", "/")])
   @testing.assert_eq(
-    text(@moonbit-hono.serialize_cgi(@moonbit-hono.demo_app().handle(req))),
+    text(@onho.serialize_cgi(@onho.demo_app().handle(req))),
     "Status: 200 OK\ncontent-type: text/plain; charset=utf-8\n\nhello from moonbit",
   )
 }
