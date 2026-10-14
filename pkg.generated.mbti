@@ -4,6 +4,8 @@ package "anccnuer/onho"
 // Values
 pub fn html(Int, String) -> Response
 
+pub fn logger() -> (Request, (Request) -> Response raise) -> Response raise
+
 pub fn parse_request(Bytes) -> Request?
 
 pub fn reason_phrase(Int) -> String
@@ -47,8 +49,11 @@ pub struct Request {
   body : String
   params : Array[(String, String)]
 }
+pub fn Request::form_all(Self, String) -> Array[String]
+pub fn Request::form_param(Self, String) -> String
 pub fn Request::header(Self, String) -> String
 pub fn Request::param(Self, String) -> String
+pub fn Request::query_all(Self, String) -> Array[String]
 pub fn Request::query_param(Self, String) -> String
 pub fn Request::set_header(Self, String, String) -> Self
 pub fn Request::uri(Self) -> String

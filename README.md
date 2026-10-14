@@ -67,6 +67,20 @@ app.on_error((_req, _err) => @onho.response(500, "internal error"))  // 不注�
 app.not_found(_req => @onho.response_json(404, "{\"error\":\"not found\"}"))
 ```
 
+表单与多值参数:
+
+```moonbit
+req.query_all("tag")     // ?tag=a&tag=b -> ["a", "b"]
+req.form_param("name")   // form body 字段;content-type 不是表单时返回 ""
+req.form_all("t")        // 表单字段的全部值
+```
+
+内置日志中间件,一行请求摘要写到 stderr(wasm 里也走 fd 2,不污染响应):
+
+```moonbit
+app.use_middleware(@onho.logger())   // GET /health -> 200 OK
+```
+
 接到真实的请求,取决于你跑在什么宿主后面:
 
 ```moonbit

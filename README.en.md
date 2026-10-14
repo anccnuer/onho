@@ -67,6 +67,21 @@ app.on_error((_req, _err) => @onho.response(500, "internal error"))  // defaults
 app.not_found(_req => @onho.response_json(404, "{\"error\":\"not found\"}"))
 ```
 
+Forms and multi-value parameters:
+
+```moonbit
+req.query_all("tag")     // ?tag=a&tag=b -> ["a", "b"]
+req.form_param("name")   // form body field; "" when the content type is not a form
+req.form_all("t")        // every value of a form field
+```
+
+The built-in logging middleware writes one summary line per request to stderr
+(fd 2 in wasm, so the response itself is never polluted):
+
+```moonbit
+app.use_middleware(@onho.logger())   // GET /health -> 200 OK
+```
+
 Getting a real request in depends on the host you run behind:
 
 ```moonbit

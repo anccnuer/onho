@@ -49,13 +49,22 @@ pub fn App::new() -> App {
 ///|
 /// Registers `handler` for `http_method` + `path`. `path` may be a pattern with
 /// literal segments, `:name` parameters and at most one trailing `*` wildcard.
-/// `ANY` matches every method.
+/// `ANY` matches every method. Registering the exact same method and pattern
+/// twice prints a warning to stderr, because the second route can never be
+/// reached — the first one always wins.
 pub fn App::route(
   self : App,
   http_method : String,
   path : String,
   handler : Handler,
 ) -> Unit {
+  for existing in self.routes {
+    if existing.http_method == http_method && existing.path == path {
+      eprintln(
+        "onho: duplicate route \{http_method} \{path} — only the first registration is reachable",
+      )
+    }
+  }
   self.routes.push({ http_method, path, handler, })
 }
 
@@ -345,4 +354,22 @@ fn fold_middlewares(
   }
   let rest = fold_middlewares(entries, index + 1, req, endpoint)
   req2 => (entry.mw)(req2, rest)
+}
+
+///|
+/// Builds a logging middleware. Each handled request produces one line on the
+/// standard error channel — `<method> <path> -> <status>` — which is where a
+/// CGI runner collects guest diagnostics, keeping stdout exclusively for the
+/// response itself.
+///
+/// The line records the status as it arrived at this layer, so middleware
+/// further out that rewrites the response is not reflected here.
+pub fn logger() -> Middleware {
+  (req, next) => {
+    let res = next(req)
+    eprintln(
+      "\{req.http_method} \{req.path} -> \{res.status} \{reason_phrase(res.status)}",
+    )
+    res
+  }
 }

@@ -543,3 +543,42 @@ test "reason_phrase_common_codes" {
   @testing.assert_eq(@onho.reason_phrase(429), "Too Many Requests")
   @testing.assert_eq(@onho.reason_phrase(503), "Service Unavailable")
 }
+
+///|
+/// Every value of a repeated query parameter, in arrival order.
+test "query_all_returns_every_value" {
+  let req = parsed(
+    @utf8.encode("GET /s?tag=a&x=1&tag=b%20c&tag= HTTP/1.1\r\n\r\n"),
+  )
+  @testing.assert_eq(req.query_all("tag"), ["a", "b c", ""])
+  @testing.assert_eq(req.query_all("x"), ["1"])
+  @testing.assert_eq(req.query_all("absent").length(), 0)
+}
+
+///|
+/// Form bodies parse only when the content type says so, with the same
+/// percent-decoding rules as the query string.
+test "form_params_parse_urlencoded_bodies" {
+  let req = parsed(
+    @utf8.encode(
+      "POST /form HTTP/1.1\r\ncontent-type: application/x-www-form-urlencoded\r\n\r\nname=%E4%B8%AD%E6%96%87&t=a&t=b+x",
+    ),
+  )
+  @testing.assert_eq(req.form_param("name"), "中文")
+  @testing.assert_eq(req.form_param("t"), "b x")
+  @testing.assert_eq(req.form_all("t"), ["a", "b x"])
+  @testing.assert_eq(req.form_param("absent"), "")
+}
+
+///|
+/// A non-form body reads as empty through the form accessors, so a handler can
+/// call them unconditionally.
+test "form_params_ignore_other_content_types" {
+  let req = parsed(
+    @utf8.encode(
+      "POST /form HTTP/1.1\r\ncontent-type: application/json\r\n\r\na=1",
+    ),
+  )
+  @testing.assert_eq(req.form_param("a"), "")
+  @testing.assert_eq(req.form_all("a").length(), 0)
+}

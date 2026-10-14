@@ -70,6 +70,55 @@ pub fn Request::query_param(self : Request, name : String) -> String {
 }
 
 ///|
+/// Every value of a query parameter, in arrival order, each with its percent
+/// escapes and `+` signs decoded — so `?tag=a&tag=b` reads back as both.
+pub fn Request::query_all(self : Request, name : String) -> Array[String] {
+  let out : Array[String] = []
+  for pair in self.query.split("&") {
+    match pair.split_once("=") {
+      None => ()
+      Some((key, value)) =>
+        if percent_decode(key.to_owned()) == name {
+          out.push(percent_decode(value.to_owned()))
+        }
+    }
+  }
+  out
+}
+
+///|
+/// A `application/x-www-form-urlencoded` body field, percent escapes and `+` signs
+/// decoded. Bodies of other content types read as empty, so a handler can call
+/// this unconditionally. The last value of a repeated field wins.
+pub fn Request::form_param(self : Request, name : String) -> String {
+  let vals = self.form_all(name)
+  if vals.length() > 0 {
+    vals[vals.length() - 1]
+  } else {
+    ""
+  }
+}
+
+///|
+/// Every value of a `application/x-www-form-urlencoded` body field, in arrival order.
+pub fn Request::form_all(self : Request, name : String) -> Array[String] {
+  let out : Array[String] = []
+  if self.header("content-type") != "application/x-www-form-urlencoded" {
+    return out
+  }
+  for pair in self.body.split("&") {
+    match pair.split_once("=") {
+      None => ()
+      Some((key, value)) =>
+        if percent_decode(key.to_owned()) == name {
+          out.push(percent_decode(value.to_owned()))
+        }
+    }
+  }
+  out
+}
+
+///|
 /// A path parameter captured by the router, for example `id` in the route
 /// `/user/:id`. The value captured by a trailing `*` wildcard is stored under
 /// the name `*`. Absent names read as empty, and the last value wins.

@@ -210,6 +210,7 @@ fn max_body() -> Int32 {
 /// the `anccnuer/onho` package.
 fn app() -> @lib.App {
   let app = @lib.App::new()
+  app.use_middleware(@lib.logger())
   app.get("/", _req => @lib.response(200, "hello from onho"))
   app.get("/health", _req => @lib.response(200, "ok"))
   app.post("/echo", req => @lib.response(200, req.body))

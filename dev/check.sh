@@ -29,6 +29,15 @@ if command -v wasmer >/dev/null 2>&1; then
     echo "FAIL wasmer run returned $(printf '%q' "$got")"
     exit 1
   fi
+  # The access-log middleware writes to fd 2; stdout stays the response alone.
+  err=$(MSYS2_ARG_CONV_EXCL='*' sh -c \
+    "printf '' | wasmer run '$WASM' --env REQUEST_METHOD=GET --env SCRIPT_NAME=/health --env CONTENT_LENGTH=0 2>&1 >/dev/null")
+  if [ "$err" = "GET /health -> 200 OK" ]; then
+    echo "ok   wasmer run logs the request to stderr"
+  else
+    echo "FAIL wasmer stderr was $(printf '%q' "$err")"
+    exit 1
+  fi
 else
   echo "skip wasmer CLI not on PATH"
 fi
